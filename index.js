@@ -119,32 +119,30 @@ async function paapiSearchItems(keyword) {
     body,
   });
 
-  const signer = new SignatureV4({
+ 
+const signer = new SignatureV4({
   credentials: {
-    accessKeyId: CFG.PAAPI_ACCESS_KEY,
-    secretAccessKey: CFG.PAAPI_SECRET_KEY,
+    accessKeyId: CFG.PAAPI_ACCESS_KEY,     // now trimmed by mustEnv()
+    secretAccessKey: CFG.PAAPI_SECRET_KEY, // now trimmed by mustEnv()
   },
-  region: CFG.PAAPI_REGION,          // us-east-1 for US :contentReference[oaicite:4]{index=4}
-  service: "ProductAdvertisingAPIv1",  // ✅ important :contentReference[oaicite:5]{index=5}
+  region: CFG.PAAPI_REGION,
+  service: "ProductAdvertisingAPI", // ✅ match Amazon signing examples
   sha256: Sha256,
 });
 
 const signed = await signer.sign(req);
 
-// Debug (does NOT reveal your secret)
-const auth = signed.headers?.authorization || "";
-const m = auth.match(/SignedHeaders=([^,]+)/);
-console.log("PAAPI SignedHeaders:", m?.[1] || "n/a");
+// Debug (safe)
+console.log("PAAPI host/region/tag:", CFG.PAAPI_HOST, CFG.PAAPI_REGION, CFG.PAAPI_PARTNER_TAG);
 console.log("PAAPI AccessKey prefix:", CFG.PAAPI_ACCESS_KEY.slice(0, 4), "len:", CFG.PAAPI_ACCESS_KEY.length);
 console.log("PAAPI Secret len:", CFG.PAAPI_SECRET_KEY.length);
 
+const res = await fetch(`https://${CFG.PAAPI_HOST}${signed.path}`, {
+  method: signed.method,
+  headers: signed.headers,
+  body: signed.body,
+});
 
-
-  const res = await fetch(`https://${CFG.PAAPI_HOST}${req.path}`, {
-    method: "POST",
-    headers: signed.headers,
-    body,
-  });
 
   const json = await res.json();
   if (!res.ok) throw new Error(`PA-API error ${res.status}: ${JSON.stringify(json)}`);
