@@ -11,7 +11,7 @@ import { TwitterApi } from "twitter-api-v2";
 function mustEnv(name) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
+  return v.trim(); // ✅ critical
 }
 
 const CFG = {
