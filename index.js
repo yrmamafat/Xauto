@@ -121,8 +121,8 @@ async function paapiSearchItems(keyword) {
 
   const signer = new SignatureV4({
     credentials: { accessKeyId: CFG.PAAPI_ACCESS_KEY, secretAccessKey: CFG.PAAPI_SECRET_KEY },
-    region: CFG.PAAPI_REGION,
-    service: "ProductAdvertisingAPIv1",
+     region: "us-east-1",
+  service: "ProductAdvertisingAPI",
     sha256: Sha256,
   });
 
