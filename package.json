@@ -6,8 +6,8 @@
   "scripts": { "start": "node index.js" },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
-    "@aws-sdk/protocol-http": "^3.760.0",
-    "@aws-sdk/signature-v4": "^3.760.0",
+    "@aws-sdk/protocol-http": "3.374.0",
+"@aws-sdk/signature-v4": "3.374.0",
     "openai": "^4.0.0",
     "rss-parser": "^3.13.0",
     "twitter-api-v2": "^1.18.0"
