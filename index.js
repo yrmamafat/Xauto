@@ -222,10 +222,15 @@ Top features: ${c.features?.join(" | ") || "N/A"}
 Make it feel like a "deal worth clicking" and say who it's for. End with a short CTA.`;
 
   const resp = await openai.chat.completions.create({
-    model: CFG.OPENAI_MODEL,
-    messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    temperature: 0.7,
-  });
+  model: CFG.OPENAI_MODEL,
+  messages: [{ role: "system", content: system }, { role: "user", content: user }],
+  temperature: 0.7,
+}, {
+  headers: {
+    "HTTP-Referer": CFG.OPENROUTER_SITE,
+    "X-Title": CFG.OPENROUTER_APP,
+  }
+});
 
   return String(resp.choices?.[0]?.message?.content || "").trim().replace(/\s+/g, " ");
 }
@@ -267,7 +272,10 @@ async function main() {
     return;
   }
 
-  const openai = new OpenAI({ apiKey: CFG.OPENAI_API_KEY });
+  const openai = new OpenAI({
+  apiKey: CFG.OPENAI_API_KEY,
+  baseURL: CFG.OPENAI_BASE_URL, // ✅ OpenRouter endpoint
+});
 
   // 3) For each deal title, validate + enrich with PA-API, then score
   const candidates = [];
