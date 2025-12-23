@@ -124,13 +124,21 @@ async function paapiSearchItems(keyword) {
     accessKeyId: CFG.PAAPI_ACCESS_KEY,
     secretAccessKey: CFG.PAAPI_SECRET_KEY,
   },
-  region: CFG.PAAPI_REGION,              // use your config
-  service: "ProductAdvertisingAPIv1",    // ✅ required by PA-API
+  region: CFG.PAAPI_REGION,          // us-east-1 for US :contentReference[oaicite:4]{index=4}
+  service: "ProductAdvertisingAPIv1",  // ✅ important :contentReference[oaicite:5]{index=5}
   sha256: Sha256,
 });
 
+const signed = await signer.sign(req);
 
-  const signed = await signer.sign(req);
+// Debug (does NOT reveal your secret)
+const auth = signed.headers?.authorization || "";
+const m = auth.match(/SignedHeaders=([^,]+)/);
+console.log("PAAPI SignedHeaders:", m?.[1] || "n/a");
+console.log("PAAPI AccessKey prefix:", CFG.PAAPI_ACCESS_KEY.slice(0, 4), "len:", CFG.PAAPI_ACCESS_KEY.length);
+console.log("PAAPI Secret len:", CFG.PAAPI_SECRET_KEY.length);
+
+
 
   const res = await fetch(`https://${CFG.PAAPI_HOST}${req.path}`, {
     method: "POST",
