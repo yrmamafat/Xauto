@@ -3,7 +3,11 @@ name: Deal + BestSeller → X AutoPost
 on:
   workflow_dispatch:
   schedule:
+    # 4 posts/day (Nepal time approx)
     - cron: "15 3 * * *"
+    - cron: "15 7 * * *"
+    - cron: "15 11 * * *"
+    - cron: "15 15 * * *"
 
 permissions:
   contents: write
