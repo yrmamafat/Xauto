@@ -180,8 +180,7 @@ function buildCandidate(item, dealTitle) {
 
   const match = tokenOverlapScore(cleanTitle(dealTitle), title);
 
-  return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match };
-}
+  return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match, sourceTitle: dealTitle };
 
 function scoreCandidate(c) {
   // Higher is better:
@@ -204,20 +203,28 @@ function fit280(text) {
 }
 
 async function generatePost(openai, c) {
-  const system = `You write high-CTR but honest X posts.
+  const system = `You write high-CTR but honest X posts optimized for discovery.
 Rules:
-- No hype/false urgency.
+- No false urgency, no exaggerated claims.
 - No medical/financial promises.
-- 1 emoji max.
-- Keep under 220 chars BEFORE adding link + #ad.
-- Output only the post text.`;
+- NO link. NO #ad (added later).
+- Use 1 emoji max.
+- Include 2–4 relevant hashtags at the end (not generic spam).
+- Make it searchable: include key nouns/phrases people would search.
+- Format: Hook (keyword-rich) + who it's for + 1 benefit + short CTA.
+- Keep the text under 200 characters (before link/#ad). Output only the post text.`;
 
-  const user = `Write a post for this Amazon product.
-Title: ${c.title}
+  const user = `Create a keyword-rich X post for this Amazon item.
+Product: ${c.title}
 Current price: ${c.priceDisp || "N/A"}
 Was price: ${c.basisDisp || "N/A"}
 Discount: ${c.discountPct ? c.discountPct + "%" : "N/A"}
 Top features: ${c.features?.join(" | ") || "N/A"}
+Sales rank (lower is better): ${c.websiteRank || "N/A"}
+
+Goal: maximize clicks without hype. Mention who it's for, one standout benefit, and a direct CTA.
+Add 2–4 relevant hashtags based on the product category (NOT #ad).`;
+
 
 Make it feel like a "deal worth clicking" and say who it's for. End with a short CTA.`;
 
@@ -314,7 +321,9 @@ async function main() {
   // IMPORTANT:
   // - Put “As an Amazon Associate I earn from qualifying purchases.” in your BIO/profile.
   // - Add #ad near the link in the post.
-  const finalText = fit280(`${base} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
+  const baseClean = base.replace(/\s#ad\b/gi, ""); // remove if model adds it anyway
+const finalText = fit280(`${baseClean} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
+
 
   console.log("Final:\n", finalText);
 
@@ -327,8 +336,9 @@ async function main() {
   console.log("Posted ID:", res?.data?.id);
 
   // 5) Save state (avoid repeats)
-  state.usedAsins.push(picked.asin);
-  state.usedTitles.push(items[0].title);
+state.usedAsins.push(picked.asin);
+state.usedTitles.push(picked.sourceTitle || picked.title);
+
   state.usedAsins = state.usedAsins.slice(-500);
   state.usedTitles = state.usedTitles.slice(-500);
   saveState(state);
