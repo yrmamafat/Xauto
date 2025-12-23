@@ -32,9 +32,14 @@ const CFG = {
   PAAPI_REGION: process.env.PAAPI_REGION || "us-east-1",
   PAAPI_MARKETPLACE: process.env.PAAPI_MARKETPLACE || "www.amazon.com",
 
-  // OpenAI
+   // OpenAI / OpenRouter
   OPENAI_API_KEY: mustEnv("OPENAI_API_KEY"),
-  OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  OPENAI_MODEL: process.env.OPENAI_MODEL || "openai/gpt-4o-mini",
+
+  // OpenRouter (needed if you use sk-or-v1...)
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1",
+  OPENROUTER_SITE: process.env.OPENROUTER_SITE || "https://github.com/<yourname>/<yourrepo>",
+  OPENROUTER_APP: process.env.OPENROUTER_APP || "X AutoPoster",
 
   // X (OAuth 1.0a user context)
   X_APP_KEY: mustEnv("X_APP_KEY"),
