@@ -237,12 +237,6 @@ async function postToX(text) {
   return client.v2.tweet(text);
 }
 
-function mustEnv(name) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v.trim(); // ✅ important
-}
-
 
 async function main() {
   const state = loadState();
