@@ -324,8 +324,15 @@ async function main() {
   const baseClean = base.replace(/\s#ad\b/gi, ""); // remove if model adds it anyway
 const finalText = fit280(`${baseClean} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
 
+// At this point, the link and the disclosure hashtag are added right after the post content
+// Now, we'll ensure that the hashtags come after the link and disclosure.
 
-  console.log("Final:\n", finalText);
+const hashtags = picked.sourceTitle ? "#Deals #Amazon" : "#Shopping #Discounts"; // Modify to fit the product category
+
+// Format the final post with the link first and hashtags at the end.
+const finalPostText = `${picked.url} ${CFG.DISCLOSURE_HASHTAG} ${hashtags}`;
+
+console.log("Final Post Text:\n", finalPostText);
 
   if (CFG.DRY_RUN) {
     console.log("DRY_RUN=1: not posting.");
