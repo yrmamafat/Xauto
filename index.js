@@ -13,6 +13,8 @@ function mustEnv(name) {
   return v.trim(); // ✅ critical: remove unwanted spaces
 }
 
+console.log("API Key used: ", CFG.OPENAI_API_KEY);
+
 // Configuration for various services
 const CFG = {
   FRONT_RSS: process.env.FRONT_RSS || "https://slickdeals.net/newsearch.php?mode=frontpage&rss=1&searcharea=deals&searchin=first",
