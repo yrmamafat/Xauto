@@ -223,10 +223,10 @@ Top features: ${c.features?.join(" | ") || "N/A"}
 Sales rank (lower is better): ${c.websiteRank || "N/A"}
 
 Goal: maximize clicks without hype. Mention who it's for, one standout benefit, and a direct CTA.
-Add 2–4 relevant hashtags based on the product category (NOT #ad).`;
-
+Add 2–4 relevant hashtags based on the product category (NOT #ad).
 
 Make it feel like a "deal worth clicking" and say who it's for. End with a short CTA.`;
+
 
   const resp = await openai.chat.completions.create({
   model: CFG.OPENAI_MODEL,
