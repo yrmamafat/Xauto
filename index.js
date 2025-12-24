@@ -13,7 +13,7 @@ function mustEnv(name) {
   return v.trim(); // ✅ critical: remove unwanted spaces
 }
 
-console.log("API Key used: ", CFG.OPENAI_API_KEY);
+
 
 // Configuration for various services
 const CFG = {
@@ -67,6 +67,8 @@ function cleanTitle(t) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+console.log("API Key used: ", CFG.OPENAI_API_KEY);
 
 // Function to filter products based on price and sales rank
 function filterProduct(product) {
