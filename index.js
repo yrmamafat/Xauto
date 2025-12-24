@@ -194,6 +194,41 @@ async function postToX(text, imageUrl) {
   return client.v2.tweet({ status: text, media_ids: mediaId });  // Tweet with image
 }
 
+// Function to generate a post using OpenAI
+async function generatePost(openai, c) {
+  const system = `You write high-CTR but honest X posts optimized for discovery.
+Rules:
+- No false urgency, no exaggerated claims.
+- No medical/financial promises.
+- NO link. NO #ad (added later).
+- Use 1 emoji max.
+- Include 2–4 relevant hashtags at the end (not generic spam).
+- Make it searchable: include key nouns/phrases people would search.
+- Format: Hook (keyword-rich) + who it's for + 1 benefit + short CTA.
+- Keep the text under 200 characters (before link/#ad). Output only the post text.`;
+
+  const user = `Create a keyword-rich X post for this Amazon item.
+Product: ${c.title}
+Current price: ${c.priceDisp || "N/A"}
+Was price: ${c.basisDisp || "N/A"}
+Discount: ${c.discountPct ? c.discountPct + "%" : "N/A"}
+Top features: ${c.features?.join(" | ") || "N/A"}
+Sales rank (lower is better): ${c.websiteRank || "N/A"}
+
+Goal: maximize clicks without hype. Mention who it's for, one standout benefit, and a direct CTA.
+Add 2–4 relevant hashtags based on the product category (NOT #ad).
+
+Make it feel like a "deal worth clicking" and say who it's for. End with a short CTA.`;
+
+  const resp = await openai.chat.completions.create({
+    model: CFG.OPENAI_MODEL,
+    messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    temperature: 0.7,
+  });
+
+  return String(resp.choices?.[0]?.message?.content || "").trim().replace(/\s+/g, " ");
+}
+
 // Main function to fetch, process, and post
 async function main() {
   const state = loadState();
