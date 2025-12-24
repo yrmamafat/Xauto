@@ -262,7 +262,10 @@ async function main() {
     return;
   }
 
-  const openai = new OpenAI({ apiKey: CFG.OPENAI_API_KEY });
+  const openai = new OpenAI({
+  apiKey: CFG.OPENAI_API_KEY,  // This should be your OpenRouter API Key
+  baseURL: CFG.OPENAI_BASE_URL // Use OpenRouter's API URL
+});
 
   // Validate and enrich deals with PA-API
   const candidates = [];
