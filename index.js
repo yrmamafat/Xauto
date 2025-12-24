@@ -318,31 +318,38 @@ async function main() {
   // 4) Generate post + append affiliate link + disclosure
   const base = await generatePost(openai, picked);
 
-  // IMPORTANT:
-  // - Put “As an Amazon Associate I earn from qualifying purchases.” in your BIO/profile.
-  // - Add #ad near the link in the post.
-  const baseClean = base.replace(/\s#ad\b/gi, ""); // remove if model adds it anyway
-const finalText = fit280(`${baseClean} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
+  // IMPORTANT: Remove any accidental "#ad" from the AI-generated text
+  const baseClean = base.replace(/\s#ad\b/gi, ""); // Remove '#ad' if model adds it
 
+  // Correct the order: Link first, then disclosure, then the generated text
+  const finalText = fit280(`${picked.url} ${CFG.DISCLOSURE_HASHTAG} ${baseClean}`); // Add the link and disclosure here.
 
-  console.log("Final:\n", finalText);
+  // Add relevant hashtags at the end
+  const hashtags = picked.sourceTitle ? "#Deals #Amazon" : "#Shopping #Discounts";
+
+  // Append hashtags at the end of the post
+  const finalPostText = `${finalText} ${hashtags}`;
+
+  console.log("Final:\n", finalPostText);  // This will show you the final post format.
 
   if (CFG.DRY_RUN) {
     console.log("DRY_RUN=1: not posting.");
     return;
   }
 
-  const res = await postToX(finalText);
+  // Post to X (Twitter)
+  const res = await postToX(finalPostText);
   console.log("Posted ID:", res?.data?.id);
 
   // 5) Save state (avoid repeats)
-state.usedAsins.push(picked.asin);
-state.usedTitles.push(picked.sourceTitle || picked.title);
+  state.usedAsins.push(picked.asin);
+  state.usedTitles.push(picked.sourceTitle || picked.title);
 
   state.usedAsins = state.usedAsins.slice(-500);
   state.usedTitles = state.usedTitles.slice(-500);
   saveState(state);
 }
+
 
 main().catch(e => {
   console.error(e);
