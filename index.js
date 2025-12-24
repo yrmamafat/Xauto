@@ -1,25 +1,27 @@
 import fs from "node:fs";
 import Parser from "rss-parser";
-
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { HttpRequest } from "@aws-sdk/protocol-http";
-
 import OpenAI from "openai";
 import { TwitterApi } from "twitter-api-v2";
 
+// Utility to fetch environment variables
 function mustEnv(name) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
-  return v.trim(); // ✅ critical
+  return v.trim(); // ✅ critical: remove unwanted spaces
 }
 
+// Configuration for various services
 const CFG = {
   FRONT_RSS: process.env.FRONT_RSS || "https://slickdeals.net/newsearch.php?mode=frontpage&rss=1&searcharea=deals&searchin=first",
   POP_RSS: process.env.POP_RSS || "https://slickdeals.net/newsearch.php?mode=popdeals&rss=1&searcharea=deals&searchin=first",
   TREND_RSS: process.env.TREND_RSS || "https://feeds.feedburner.com/SlickdealsnetUP",
-  MERCHANT_REGEX: new RegExp(process.env.MERCHANT_REGEX || "(amazon|amzn)", "i"),
 
+  MERCHANT_REGEX: new RegExp(process.env.MERCHANT_REGEX || "(amazon|amzn)", "i"),
+  
+  // Amazon PA-API
   PAAPI_ACCESS_KEY: mustEnv("PAAPI_ACCESS_KEY"),
   PAAPI_SECRET_KEY: mustEnv("PAAPI_SECRET_KEY"),
   PAAPI_PARTNER_TAG: mustEnv("PAAPI_PARTNER_TAG"),
@@ -27,45 +29,56 @@ const CFG = {
   PAAPI_REGION: process.env.PAAPI_REGION || "us-east-1",
   PAAPI_MARKETPLACE: process.env.PAAPI_MARKETPLACE || "www.amazon.com",
 
+  // OpenAI
   OPENAI_API_KEY: mustEnv("OPENAI_API_KEY"),
-  OPENAI_MODEL: process.env.OPENAI_MODEL || "openai/gpt-4o-mini",
+  OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-4o-mini",
 
-  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1",
-  OPENROUTER_SITE: process.env.OPENROUTER_SITE || "https://github.com/<yourname>/<yourrepo>",
-  OPENROUTER_APP: process.env.OPENROUTER_APP || "X AutoPoster",
-
+  // X (OAuth 1.0a user context)
   X_APP_KEY: mustEnv("X_APP_KEY"),
   X_APP_SECRET: mustEnv("X_APP_SECRET"),
   X_ACCESS_TOKEN: mustEnv("X_ACCESS_TOKEN"),
   X_ACCESS_SECRET: mustEnv("X_ACCESS_SECRET"),
 
+  // Behavior
   DRY_RUN: (process.env.DRY_RUN || "0") === "1",
   MAX_FEED_ITEMS: Number(process.env.MAX_FEED_ITEMS || 20),
   MAX_CANDIDATES: Number(process.env.MAX_CANDIDATES || 8),
-  MIN_PRICE: 500, // Products must be greater than $500
   DISCLOSURE_HASHTAG: process.env.DISCLOSURE_HASHTAG || "#ad"
 };
 
 const STATE_PATH = "./state.json";
 
-// Load and save state to prevent repeating the same products
+// State loading and saving functions
 function loadState() {
   if (!fs.existsSync(STATE_PATH)) return { usedAsins: [], usedTitles: [] };
   return JSON.parse(fs.readFileSync(STATE_PATH, "utf-8"));
 }
-
 function saveState(state) {
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
 
+// Utility to clean product title for searching
 function cleanTitle(t) {
   return (t || "")
-    .replace(/\$?\d+(\.\d+)?/g, "")  // Remove prices
+    .replace(/\$?\d+(\.\d+)?/g, "")     // remove prices
     .replace(/\b(Free|Deal|Save|Off|Coupon)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// Function to filter products based on price and sales rank
+function filterProduct(product) {
+  const price = parseMoney(product.Offers?.Listings?.[0]?.Price?.DisplayAmount);
+  const rank = Number(product?.BrowseNodeInfo?.WebsiteSalesRank?.SalesRank || 0);
+
+  // Only accept products priced over $500 and with a good sales rank (lower is better)
+  if (price && price >= 500 && rank < 1000) {
+    return true;
+  }
+  return false;
+}
+
+// Function to calculate token overlap score between deal title and product title
 function tokenOverlapScore(a, b) {
   const A = new Set(a.toLowerCase().split(/\W+/).filter(x => x.length > 2));
   const B = new Set(b.toLowerCase().split(/\W+/).filter(x => x.length > 2));
@@ -75,6 +88,7 @@ function tokenOverlapScore(a, b) {
   return hit / Math.max(A.size, B.size);
 }
 
+// Function to fetch deal items from RSS feed
 async function fetchDealsFromRss(url) {
   const parser = new Parser();
   const feed = await parser.parseURL(url);
@@ -85,6 +99,7 @@ async function fetchDealsFromRss(url) {
   }));
 }
 
+// Function to fetch product details from Amazon's PA-API
 async function paapiSearchItems(keyword) {
   const payloadObj = {
     PartnerType: "Associates",
@@ -129,7 +144,6 @@ async function paapiSearchItems(keyword) {
   });
 
   const signed = await signer.sign(req);
-
   const res = await fetch(`https://${CFG.PAAPI_HOST}${req.path}`, {
     method: "POST",
     headers: signed.headers,
@@ -141,16 +155,18 @@ async function paapiSearchItems(keyword) {
   return json;
 }
 
+// Parse price from display string
 function parseMoney(display) {
   const m = String(display || "").replace(/[^0-9.]/g, "");
   const n = Number(m);
   return Number.isFinite(n) ? n : null;
 }
 
+// Build candidate product from PA-API response
 function buildCandidate(item, dealTitle) {
   const title = item?.ItemInfo?.Title?.DisplayValue || "";
   const asin = item?.ASIN || "";
-  const url = item?.DetailPageURL || "";
+  const url = item?.DetailPageURL || ""; 
   const priceDisp = item?.Offers?.Listings?.[0]?.Price?.DisplayAmount || "";
   const basisDisp = item?.Offers?.Listings?.[0]?.SavingBasis?.DisplayAmount || "";
   const price = parseMoney(priceDisp);
@@ -169,41 +185,36 @@ function buildCandidate(item, dealTitle) {
   return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match, sourceTitle: dealTitle };
 }
 
+// Score candidate products based on match, discount, and sales rank
 function scoreCandidate(c) {
   const matchScore = (c.match || 0) * 100;
   const discountScore = (c.discountPct || 0) * 2;
   const rankScore = c.websiteRank ? Math.max(0, 100 - Math.log10(c.websiteRank) * 20) : 0;
+
   return matchScore + discountScore + rankScore;
 }
 
+// Fit text to 280 characters (for Twitter)
 function fit280(text) {
   if (text.length <= 280) return text;
   return text.slice(0, 277).replace(/\s+\S*$/, "") + "...";
 }
 
+// Generate post content using OpenAI
 async function generatePost(openai, c) {
-  const system = `You write high-CTR but honest X posts optimized for discovery.
+  const system = `Write high-CTR, SEO-friendly posts for Amazon deals.
 Rules:
-- No false urgency, no exaggerated claims.
-- No medical/financial promises.
-- NO link. NO #ad (added later).
+- No false urgency.
 - Use 1 emoji max.
-- Include 2–4 relevant hashtags at the end (not generic spam).
-- Make it searchable: include key nouns/phrases people would search.
-- Format: Hook (keyword-rich) + who it's for + 1 benefit + short CTA.
-- Keep the text under 200 characters (before link/#ad). Output only the post text.`;
+- Include 2–4 relevant hashtags.
+- Focus on key benefits and the audience.
+- Keep the text under 200 characters (before link/#ad).`;
 
-  const user = `Create a keyword-rich X post for this Amazon item.
-Product: ${c.title}
-Current price: ${c.priceDisp || "N/A"}
-Was price: ${c.basisDisp || "N/A"}
+  const user = `Write a compelling post for this Amazon product.
+Title: ${c.title}
+Price: ${c.priceDisp || "N/A"}
 Discount: ${c.discountPct ? c.discountPct + "%" : "N/A"}
-Top features: ${c.features?.join(" | ") || "N/A"}
-Sales rank (lower is better): ${c.websiteRank || "N/A"}
-
-Goal: maximize clicks without hype. Mention who it's for, one standout benefit, and a direct CTA.
-Add 2–4 relevant hashtags based on the product category (NOT #ad).
-`;
+Top features: ${c.features?.join(" | ") || "N/A"}`;
 
   const resp = await openai.chat.completions.create({
     model: CFG.OPENAI_MODEL,
@@ -214,6 +225,7 @@ Add 2–4 relevant hashtags based on the product category (NOT #ad).
   return String(resp.choices?.[0]?.message?.content || "").trim().replace(/\s+/g, " ");
 }
 
+// Post to X (Twitter)
 async function postToX(text) {
   const client = new TwitterApi({
     appKey: CFG.X_APP_KEY,
@@ -224,11 +236,13 @@ async function postToX(text) {
   return client.v2.tweet(text);
 }
 
+// Main function to run the automation
 async function main() {
   const state = loadState();
-
-  const feeds = [CFG.FRONT_RSS, CFG.POP_RSS, CFG.TREND_RSS];
   let items = [];
+
+  // Fetch deals from RSS feeds
+  const feeds = [CFG.FRONT_RSS, CFG.POP_RSS, CFG.TREND_RSS];
   for (const url of feeds) {
     try {
       const got = await fetchDealsFromRss(url);
@@ -238,22 +252,19 @@ async function main() {
     }
   }
 
-  items = items
-    .filter(it => CFG.MERCHANT_REGEX.test(it.title))
-    .filter(it => !state.usedTitles.includes(it.title))
-    .filter(it => parseMoney(it.price) > CFG.MIN_PRICE)  // Filter products > $500
-    .slice(0, CFG.MAX_CANDIDATES);
+  // Filter and select only Amazon deals over $500
+  items = items.filter(it => CFG.MERCHANT_REGEX.test(it.title))
+               .filter(it => !state.usedTitles.includes(it.title))
+               .slice(0, CFG.MAX_CANDIDATES);
 
   if (!items.length) {
     console.log("No fresh deal items. Exiting.");
     return;
   }
 
-  const openai = new OpenAI({
-    apiKey: CFG.OPENAI_API_KEY,
-    baseURL: CFG.OPENAI_BASE_URL, // ✅ OpenRouter endpoint
-  });
+  const openai = new OpenAI({ apiKey: CFG.OPENAI_API_KEY });
 
+  // Validate and enrich deals with PA-API
   const candidates = [];
   for (const d of items) {
     const keyword = cleanTitle(d.title);
@@ -282,10 +293,9 @@ async function main() {
   candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
   const picked = candidates[0];
 
+  // Generate post + append affiliate link + disclosure
   const base = await generatePost(openai, picked);
-
-  const baseClean = base.replace(/\s#ad\b/gi, ""); 
-  const finalText = fit280(`${baseClean} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
+  const finalText = fit280(`${base} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
 
   console.log("Final Post Text:\n", finalText);
 
@@ -294,12 +304,13 @@ async function main() {
     return;
   }
 
+  // Post to X (Twitter)
   const res = await postToX(finalText);
   console.log("Posted ID:", res?.data?.id);
 
+  // Save state to avoid repeats
   state.usedAsins.push(picked.asin);
   state.usedTitles.push(picked.sourceTitle || picked.title);
-
   state.usedAsins = state.usedAsins.slice(-500);
   state.usedTitles = state.usedTitles.slice(-500);
   saveState(state);
