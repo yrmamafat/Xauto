@@ -16,6 +16,7 @@ function mustEnv(name) {
 
 const CFG = {
   // Slickdeals RSS sources (Frontpage/Popular/Trending)
+  // Slickdeals help article lists these RSS feeds. (URLs below are widely used patterns.)
   FRONT_RSS: process.env.FRONT_RSS || "https://slickdeals.net/newsearch.php?mode=frontpage&rss=1&searcharea=deals&searchin=first",
   POP_RSS: process.env.POP_RSS || "https://slickdeals.net/newsearch.php?mode=popdeals&rss=1&searcharea=deals&searchin=first",
   TREND_RSS: process.env.TREND_RSS || "https://feeds.feedburner.com/SlickdealsnetUP",
@@ -31,11 +32,16 @@ const CFG = {
   PAAPI_REGION: process.env.PAAPI_REGION || "us-east-1",
   PAAPI_MARKETPLACE: process.env.PAAPI_MARKETPLACE || "www.amazon.com",
 
-  // OpenAI
+   // OpenAI / OpenRouter
   OPENAI_API_KEY: mustEnv("OPENAI_API_KEY"),
   OPENAI_MODEL: process.env.OPENAI_MODEL || "openai/gpt-4o-mini",
 
-  // Twitter API (X)
+  // OpenRouter (needed if you use sk-or-v1...)
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1",
+  OPENROUTER_SITE: process.env.OPENROUTER_SITE || "https://github.com/<yourname>/<yourrepo>",
+  OPENROUTER_APP: process.env.OPENROUTER_APP || "X AutoPoster",
+
+  // X (OAuth 1.0a user context)
   X_APP_KEY: mustEnv("X_APP_KEY"),
   X_APP_SECRET: mustEnv("X_APP_SECRET"),
   X_ACCESS_TOKEN: mustEnv("X_ACCESS_TOKEN"),
@@ -54,7 +60,6 @@ function loadState() {
   if (!fs.existsSync(STATE_PATH)) return { usedAsins: [], usedTitles: [] };
   return JSON.parse(fs.readFileSync(STATE_PATH, "utf-8"));
 }
-
 function saveState(state) {
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
@@ -119,22 +124,30 @@ async function paapiSearchItems(keyword) {
     body,
   });
 
-  const signer = new SignatureV4({
-    credentials: {
-      accessKeyId: CFG.PAAPI_ACCESS_KEY,
-      secretAccessKey: CFG.PAAPI_SECRET_KEY,
-    },
-    region: CFG.PAAPI_REGION,
-    service: "ProductAdvertisingAPIv1",
-    sha256: Sha256,
-  });
+ 
+const signer = new SignatureV4({
+  credentials: {
+    accessKeyId: CFG.PAAPI_ACCESS_KEY,     // now trimmed by mustEnv()
+    secretAccessKey: CFG.PAAPI_SECRET_KEY, // now trimmed by mustEnv()
+  },
+  region: CFG.PAAPI_REGION,
+  service: "ProductAdvertisingAPI", // ✅ match Amazon signing examples
+  sha256: Sha256,
+});
 
-  const signed = await signer.sign(req);
-  const res = await fetch(`https://${CFG.PAAPI_HOST}${signed.path}`, {
-    method: signed.method,
-    headers: signed.headers,
-    body: signed.body,
-  });
+const signed = await signer.sign(req);
+
+// Debug (safe)
+console.log("PAAPI host/region/tag:", CFG.PAAPI_HOST, CFG.PAAPI_REGION, CFG.PAAPI_PARTNER_TAG);
+console.log("PAAPI AccessKey prefix:", CFG.PAAPI_ACCESS_KEY.slice(0, 4), "len:", CFG.PAAPI_ACCESS_KEY.length);
+console.log("PAAPI Secret len:", CFG.PAAPI_SECRET_KEY.length);
+
+const res = await fetch(`https://${CFG.PAAPI_HOST}${signed.path}`, {
+  method: signed.method,
+  headers: signed.headers,
+  body: signed.body,
+});
+
 
   const json = await res.json();
   if (!res.ok) throw new Error(`PA-API error ${res.status}: ${JSON.stringify(json)}`);
@@ -142,6 +155,7 @@ async function paapiSearchItems(keyword) {
 }
 
 function parseMoney(display) {
+  // Very light parsing, not perfect for all locales
   const m = String(display || "").replace(/[^0-9.]/g, "");
   const n = Number(m);
   return Number.isFinite(n) ? n : null;
@@ -150,7 +164,7 @@ function parseMoney(display) {
 function buildCandidate(item, dealTitle) {
   const title = item?.ItemInfo?.Title?.DisplayValue || "";
   const asin = item?.ASIN || "";
-  const url = item?.DetailPageURL || "";
+  const url = item?.DetailPageURL || ""; // usually includes your partner tag
   const priceDisp = item?.Offers?.Listings?.[0]?.Price?.DisplayAmount || "";
   const basisDisp = item?.Offers?.Listings?.[0]?.SavingBasis?.DisplayAmount || "";
   const price = parseMoney(priceDisp);
@@ -166,12 +180,18 @@ function buildCandidate(item, dealTitle) {
 
   const match = tokenOverlapScore(cleanTitle(dealTitle), title);
 
-  return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match, sourceTitle: dealTitle };
-}
+  return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match, sourceTitle: dealTitle };}
 
 function scoreCandidate(c) {
+  // Higher is better:
+  // - strong title match
+  // - bigger discount
+  // - better (lower) website sales rank
   const matchScore = (c.match || 0) * 100;
+
   const discountScore = (c.discountPct || 0) * 2;
+
+  // rank: smaller is better; convert to score
   const rankScore = c.websiteRank ? Math.max(0, 100 - Math.log10(c.websiteRank) * 20) : 0;
 
   return matchScore + discountScore + rankScore;
@@ -203,13 +223,21 @@ Top features: ${c.features?.join(" | ") || "N/A"}
 Sales rank (lower is better): ${c.websiteRank || "N/A"}
 
 Goal: maximize clicks without hype. Mention who it's for, one standout benefit, and a direct CTA.
-Add 2–4 relevant hashtags based on the product category (NOT #ad).`;
+Add 2–4 relevant hashtags based on the product category (NOT #ad).
+
+Make it feel like a "deal worth clicking" and say who it's for. End with a short CTA.`;
+
 
   const resp = await openai.chat.completions.create({
-    model: CFG.OPENAI_MODEL,
-    messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    temperature: 0.7,
-  });
+  model: CFG.OPENAI_MODEL,
+  messages: [{ role: "system", content: system }, { role: "user", content: user }],
+  temperature: 0.7,
+}, {
+  headers: {
+    "HTTP-Referer": CFG.OPENROUTER_SITE,
+    "X-Title": CFG.OPENROUTER_APP,
+  }
+});
 
   return String(resp.choices?.[0]?.message?.content || "").trim().replace(/\s+/g, " ");
 }
@@ -223,6 +251,7 @@ async function postToX(text) {
   });
   return client.v2.tweet(text);
 }
+
 
 async function main() {
   const state = loadState();
@@ -250,7 +279,10 @@ async function main() {
     return;
   }
 
-  const openai = new OpenAI({ apiKey: CFG.OPENAI_API_KEY });
+  const openai = new OpenAI({
+  apiKey: CFG.OPENAI_API_KEY,
+  baseURL: CFG.OPENAI_BASE_URL, // ✅ OpenRouter endpoint
+});
 
   // 3) For each deal title, validate + enrich with PA-API, then score
   const candidates = [];
@@ -286,9 +318,21 @@ async function main() {
   // 4) Generate post + append affiliate link + disclosure
   const base = await generatePost(openai, picked);
 
-  const finalText = fit280(`${base} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
+  // IMPORTANT:
+  // - Put “As an Amazon Associate I earn from qualifying purchases.” in your BIO/profile.
+  // - Add #ad near the link in the post.
+  const baseClean = base.replace(/\s#ad\b/gi, ""); // remove if model adds it anyway
+const finalText = fit280(`${baseClean} ${picked.url} ${CFG.DISCLOSURE_HASHTAG}`);
 
-  console.log("Final Post Text:\n", finalText);
+// At this point, the link and the disclosure hashtag are added right after the post content
+// Now, we'll ensure that the hashtags come after the link and disclosure.
+
+const hashtags = picked.sourceTitle ? "#Deals #Amazon" : "#Shopping #Discounts"; // Modify to fit the product category
+
+// Format the final post with the link first and hashtags at the end.
+const finalPostText = `${picked.url} ${CFG.DISCLOSURE_HASHTAG} ${hashtags}`;
+
+console.log("Final Post Text:\n", finalPostText);
 
   if (CFG.DRY_RUN) {
     console.log("DRY_RUN=1: not posting.");
@@ -299,8 +343,8 @@ async function main() {
   console.log("Posted ID:", res?.data?.id);
 
   // 5) Save state (avoid repeats)
-  state.usedAsins.push(picked.asin);
-  state.usedTitles.push(picked.sourceTitle || picked.title);
+state.usedAsins.push(picked.asin);
+state.usedTitles.push(picked.sourceTitle || picked.title);
 
   state.usedAsins = state.usedAsins.slice(-500);
   state.usedTitles = state.usedTitles.slice(-500);
@@ -311,3 +355,6 @@ main().catch(e => {
   console.error(e);
   process.exit(1);
 });
+
+
+fix and give whole
