@@ -20,6 +20,7 @@ const CFG = {
   FRONT_RSS: process.env.FRONT_RSS || "https://slickdeals.net/newsearch.php?mode=frontpage&rss=1&searcharea=deals&searchin=first",
   POP_RSS: process.env.POP_RSS || "https://slickdeals.net/newsearch.php?mode=popdeals&rss=1&searcharea=deals&searchin=first",
   TREND_RSS: process.env.TREND_RSS || "https://feeds.feedburner.com/SlickdealsnetUP",
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
 
   MERCHANT_REGEX: new RegExp(process.env.MERCHANT_REGEX || "(amazon|amzn)", "i"),
   
