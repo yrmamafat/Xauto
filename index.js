@@ -180,7 +180,7 @@ function buildCandidate(item, dealTitle) {
 
   const match = tokenOverlapScore(cleanTitle(dealTitle), title);
 
-  return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match, sourceTitle: dealTitle };
+  return { asin, title, url, priceDisp, basisDisp, discountPct, websiteRank, features, img, match, sourceTitle: dealTitle };}
 
 function scoreCandidate(c) {
   // Higher is better:
